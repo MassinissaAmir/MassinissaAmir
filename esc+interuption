@@ -1,0 +1,56 @@
+// Définir les broches utilisées
+#define ESC_PIN PB1 // PWM ESC
+#define POT_PIN A0  // Potentiomètre 
+
+// Variables globales pour stocker la durée de l'impulsion PWM
+int g_int_pulse = 1000; // Durée initiale de 1 ms
+
+// Initialiser la durée de la période PWM en microsecondes (20 ms)
+const int g_int_PWMPERIOD = 20000;
+
+void setup() {
+  // Initialiser la broche de l'ESC comme sortie en utilisant les registres
+  DDRB |= (1 << ESC_PIN); // Mettre le bit 1 du PORTB (PB1) en sortie
+
+  // Initialiser la communication série à 9600 bauds (pour débogage)
+  Serial.begin(9600);
+
+  // Configurer Timer1 pour générer une interruption toutes les 20 ms
+  noInterrupts(); // Désactiver les interruptions pendant la configuration
+  TCCR1A = 0;     // Régistre de contrôle A du Timer1 à 0
+  TCCR1B = 0;     // Régistre de contrôle B du Timer1 à 0
+  TCNT1 = 0;      // Initialiser le compteur du Timer1 à 0
+  OCR1A = (g_int_PWMPERIOD - 1);  // Comparateur A du Timer1 (pour une période de 20 ms)
+  TCCR1B |= (1 << WGM12);    // Mode CTC 
+  TCCR1B |= (1 << CS11);     // prescaleur8 
+  TIMSK1 |= (1 << OCIE1A);   // Activer l'interruption du comparateur A du Timer1
+  interrupts(); // Activer les interruptions
+}
+
+void loop() {
+  // Lire la valeur du potentiomètre (de 0 à 1023)
+  int potValue = analogRead(POT_PIN);
+
+  // Convertir la valeur du potentiomètre en largeur d'impulsion (de 1000 à 2000 microsecondes)
+  g_int_pulse = map(potValue, 0, 1023, 1000, 2000);
+
+ 
+  delay(100);
+}
+
+// Fonction d'interruption appelée par Timer1
+ISR(TIMER1_COMPA_vect) {
+  static bool escState = false;
+
+  if (escState) {
+    // Fin de l'impulsion PWM
+    PORTB &= ~(1 << ESC_PIN);
+    OCR1A = g_int_PWMPERIOD - g_int_pulse; // interruption toutes les 20 ms
+  } else {
+    // Début de l'impulsion PWM
+    PORTB |= (1 << ESC_PIN);
+    OCR1A = g_int_pulse; // Prochaine interruption après la durée de l'impulsion
+  }
+  escState = !escState; // Inverser l'état de l'ESC
+}
+
