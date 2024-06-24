@@ -1,0 +1,86 @@
+#include <SPI.h>
+#include "RF24.h"
+
+#include <Servo.h>
+
+// PROGRAMME RECEPTEUR
+
+/*  PINOUT
+
+-----  NRF  -----
+
+CE    D9
+CS    D10
+SCK   D13
+MOSI  D11
+MISO  D12
+
+----------------
+
+LIEN DOC
+https://nrf24.github.io/RF24/classRF24.html#
+
+*/
+
+#define CE_PIN 9
+#define CSN_PIN 10
+
+#define RF_POWER 3 //chiffre de 0 Ã  3 du minimum au maximum d'Ã©mission
+#define NUM_RADIO 0 //dÃ©finit le numÃ©ro de la paire de NRF (ne pas utiliser encore)
+
+//init radio
+RF24 radio(CE_PIN, CSN_PIN);
+
+// dÃ©finition des adresses possibles (des tunnels)
+uint8_t address[][6] = { "Avi01", "Avi02" };
+
+//DÃ©finition du Payload de 2 octets max
+uint8_t payload[2];
+
+Servo Gouverne_direction;
+
+
+void setup() {
+  Serial.begin(9600);
+
+  Gouverne_direction.attach(6);
+  
+  if (!radio.begin()) {
+    Serial.println(F("Pas de rÃ©ponse du NRF"));
+    while (1) {}  // hold in infinite loop
+  }
+  radio.setRadiation(RF_POWER,2,1); //puissance dÃ©finie utilisateur, dÃ©bit 250kb/s, ampli antenne ON
+  radio.setPayloadSize(2); // Taille systÃ©matique de 2 octets : 0xXX commande, 0xXX valeur
+  radio.enableAckPayload(); //Payload de vÃ©rification que l'avion a bien reÃ§u
+
+  radio.openWritingPipe(address[1]);  // always uses pipe 0
+  radio.openReadingPipe(1, address[0]);  // using pipe 1
+
+  radio.setRetries(10,5); //10*250us=2.5ms entre chaque essai d'envoi, pour 5 essais
+
+  payload[1]=0xBE;
+
+  radio.startListening();  // Mode rÃ©cepteur
+}
+
+void loop() {
+    uint8_t pipe;
+    if (radio.available(&pipe)) { //Si payload reÃ§u (pipe contiendra le numÃ©ro du tunnel)
+      radio.read(&payload, sizeof(payload));  // lecture RF
+      Serial.print("ReÃ§u : 0x");
+      Serial.print(payload[0], HEX);
+      Serial.print(" , 0x");
+      Serial.println(payload[1], HEX);
+
+      switch(payload[0]){ //Selon code commande reÃ§u
+        case 0x44 : // Gouverne de direction OU Volet selon mode air ou sol
+          Gouverne_direction.write(payload[1]); //Ecriture dans servo
+          Serial.print("Angle reÃ§u : ");
+          Serial.println(payload[1]);
+          break;
+          
+        default :
+          Serial.println("code incorrect");
+      }
+    }
+}
